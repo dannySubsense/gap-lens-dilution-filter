@@ -17,6 +17,34 @@
 
 ## 1. Run the Test Suite (no services required)
 
+### Unit + integration tests (161 tests, ~5s)
+
+```bash
+cd /home/d-tuned/projects/gap-lens-dilution-filter
+python3 -m pytest tests/ -q --ignore=tests/test_playwright_qc.py
+```
+
+### Playwright browser QC (16 tests — requires services running)
+
+Start the backend and frontend first (Sections 2 and 3), then:
+
+```bash
+python3 -m pytest tests/test_playwright_qc.py -v -s
+```
+
+The Playwright suite will **skip automatically** if either service is not reachable.
+Expected output when services are up: `16 passed`.
+
+### Full suite (unit + Playwright)
+
+```bash
+python3 -m pytest tests/ -v
+```
+
+---
+
+## 1a. Standard Unit + Integration Suite (no services required)
+
 ```bash
 cd /home/d-tuned/projects/gap-lens-dilution-filter
 
