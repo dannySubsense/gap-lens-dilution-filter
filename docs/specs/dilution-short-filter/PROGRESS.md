@@ -17,7 +17,7 @@
 - [x] Slice 12: Pipeline Integration — COMPLETE (2026-04-05, commit 07ab170, 6/6 tests)
 - [x] Slice 13: API Routes — COMPLETE (2026-04-05, commit 1ef4eb2, 7/7 tests)
 - [x] Slice 14: Frontend Shell — COMPLETE (2026-04-05, commit 31bd049, tsc PASS)
-- [x] Slice 15: Signal Rows + Auto-Refresh — COMPLETE (2026-04-05, commit TBD, tsc PASS)
+- [x] Slice 15: Signal Rows + Auto-Refresh — COMPLETE (2026-04-05, commit cf0eb51, tsc PASS)
 - [ ] Slice 16: Setup Detail + Position Tracking — PENDING
 - [ ] Slice 17: End-to-End Smoke Test — PENDING
 
