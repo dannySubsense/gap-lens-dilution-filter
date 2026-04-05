@@ -13,7 +13,7 @@
 - [x] Slice 8: Filter Engine — COMPLETE (2026-04-05, commit 66ed0f0, 16/16 tests)
 - [x] Slice 9: Classifier Protocol + Rule-Based — COMPLETE (2026-04-05, commit 66ed0f0, 18/18 tests)
 - [x] Slice 10: Scorer — COMPLETE (2026-04-05, commit 7abbe24, 9/9 tests)
-- [x] Slice 11: Signal Manager — COMPLETE (2026-04-05, commit TBD, 7/7 tests)
+- [x] Slice 11: Signal Manager — COMPLETE (2026-04-05, commit 9f1159e, 7/7 tests)
 - [ ] Slice 12: Pipeline Integration — PENDING
 - [ ] Slice 13: API Routes — PENDING
 - [ ] Slice 14: Frontend Shell — PENDING
