@@ -15,6 +15,19 @@
 
 ---
 
+## Two-Tier Testing Model
+
+This project uses two distinct test tiers. Both must pass before any sprint is closed or deployment made.
+
+| Tier | Command | Services needed | Speed | What it catches |
+|------|---------|----------------|-------|----------------|
+| Unit + Integration | `pytest tests/ --ignore=test_playwright_qc.py` | No | ~5s | Logic, data flow, edge cases |
+| Playwright QC | `bash scripts/run_playwright_qc.sh` | Yes (auto-managed) | ~25s | CORS, DB concurrency, browser rendering, multi-step UX |
+
+Neither tier replaces the other. See `docs/SOP_PLAYWRIGHT_QC.md` for the full Playwright QC procedure.
+
+---
+
 ## 1. Run the Test Suite (no services required)
 
 ### Unit + integration tests (161 tests, ~5s)
@@ -24,22 +37,16 @@ cd /home/d-tuned/projects/gap-lens-dilution-filter
 python3 -m pytest tests/ -q --ignore=tests/test_playwright_qc.py
 ```
 
-### Playwright browser QC (16 tests — requires services running)
+### Playwright browser QC (16 tests — fully orchestrated)
 
-Start the backend and frontend first (Sections 2 and 3), then:
-
-```bash
-python3 -m pytest tests/test_playwright_qc.py -v -s
-```
-
-The Playwright suite will **skip automatically** if either service is not reachable.
-Expected output when services are up: `16 passed`.
-
-### Full suite (unit + Playwright)
+The script manages service startup, seeding, teardown, and cleanup automatically:
 
 ```bash
-python3 -m pytest tests/ -v
+bash scripts/run_playwright_qc.sh
 ```
+
+Expected output: `16 passed in ~25s`, exit code 0.  
+See `docs/SOP_PLAYWRIGHT_QC.md` for failure diagnosis.
 
 ---
 

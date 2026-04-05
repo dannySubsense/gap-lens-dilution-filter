@@ -37,3 +37,27 @@ Stop and ask the human when:
 - A gap requires a business decision (e.g., win rates, thresholds, data sources)
 - Two agents produce contradictory outputs
 - A fix contract would change scope beyond the identified gap
+
+---
+
+## Sprint Closure Gate — Non-Negotiable
+
+A forge sprint is not complete until **both** of the following pass:
+
+### Gate 1: Unit + Integration Tests
+```bash
+python3 -m pytest tests/ -q --ignore=tests/test_playwright_qc.py
+```
+**Required**: all tests pass, exit code 0.
+
+### Gate 2: Playwright QC (full-stack browser tests)
+```bash
+bash scripts/run_playwright_qc.sh
+```
+**Required**: 16/16 tests pass, exit code 0.
+
+The Playwright QC catches bugs invisible to unit tests: CORS, DB thread-safety,
+multi-step UX flows, and browser rendering. It is the final gate — not optional,
+not skippable. See `docs/SOP_PLAYWRIGHT_QC.md` for the full procedure.
+
+**Sprint status must not be set to COMPLETE in PROGRESS.md until both gates pass.**
