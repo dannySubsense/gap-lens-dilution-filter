@@ -164,6 +164,24 @@ async def process_filing(
         classifier = get_classifier()
         classification = await classifier.classify(filing_text, form_type)
 
+        # Step 7.5: Resolve dilution_severity (see Architecture Section 3.5.4)
+        shares_offered_raw: int = classification.pop("_shares_offered_raw", 0)
+        if (
+            shares_offered_raw > 0
+            and fmp_data is not None
+            and fmp_data.float_shares > 0
+        ):
+            raw_ratio = shares_offered_raw / fmp_data.float_shares
+            if raw_ratio > 1.0:
+                logger.warning(
+                    "DILUTION_SEVERITY_CLAMPED: ticker=%s raw_ratio=%.4f",
+                    ticker,
+                    raw_ratio,
+                )
+            classification["dilution_severity"] = min(raw_ratio, 1.0)
+        else:
+            classification["dilution_severity"] = 0.0
+
         # Step 8: NULL setup_type -> CLASSIFIED, no score/signal
         if classification["setup_type"] == "NULL":
             await asyncio.to_thread(

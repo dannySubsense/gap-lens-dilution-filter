@@ -331,7 +331,8 @@ TickerResolver:
 - On a match: `confidence = 1.0`. On NULL: `confidence = 0.0`.
 - `immediate_pressure = True` for setup types B and C only.
 - `key_excerpt`: first 500-character window containing the matched keyword, truncated to 500 chars before return.
-- `dilution_severity`: keyword-regex extraction of "X,XXX,XXX shares" near offering language, divided by float. Returns `0.0` if not extractable.
+- `_shares_offered_raw` (transient pipeline field): use `SHARES_OFFERED_PATTERNS` regex (same patterns as FilterEngine; defined in Section 3.5.3 of 02-ARCHITECTURE.md) to extract a raw integer share count from `filing_text`. Store it on the returned `ClassificationResult` dict as `_shares_offered_raw: int`. If no pattern matches, set `_shares_offered_raw = 0`.
+- `dilution_severity`: the classifier always returns `0.0` for this field. The real ratio is computed by pipeline step 7.5 (between classify and score) using `_shares_offered_raw / fmp_data.float_shares`. See Section 3.5.4 of 02-ARCHITECTURE.md for the authoritative data path. Do NOT attempt to compute the ratio inside the classifier.
 - `price_discount`: regex for `"\$\d+\.\d+"` near "at" or "priced at" language. Returns `None` if not extractable.
 - `__init__.py` provides `get_classifier(name: str | None = None) -> ClassifierProtocol` using the registry pattern from Section 3.5.2. Pipeline code must only import `get_classifier`, never `RuleBasedClassifier` directly.
 - If multiple rules match, first in precedence order wins; all matched pattern labels logged to `filings.all_matched_patterns` as a JSON array.
@@ -368,7 +369,7 @@ TickerResolver:
   score = clamp(int(raw_score / settings.score_normalization_ceiling * 100), 0, 100)
   ```
 - If `borrow_cost == 0.0`: substitute `settings.default_borrow_cost`, log warning.
-- If `classification["dilution_severity"] == 0.0`: log a data quality note (conservative — scorer returns a low score, not an error).
+- `classification["dilution_severity"]` is guaranteed to be the final resolved ratio by the time `Scorer.score()` is called (pipeline step 7.5 patches it before step 9). The Scorer reads this value directly. If it is 0.0 despite step 7.5 having run, log `DILUTION_SEVERITY_ZERO` warning; the scorer continues and returns a low score naturally — not an error.
 - If normalized value exceeds 100 before clamping: log a data quality warning with the raw pre-normalization value.
 - Rank thresholds: score > 80 → "A", 60 <= score <= 80 → "B", 40 <= score < 60 → "C", score < 40 → "D".
 - `setup_type = "NULL"` should not reach the scorer (filtered before this stage); if it does, return `ScorerResult(score=0, rank="D")`.
@@ -434,8 +435,9 @@ TickerResolver:
   5. Call `FilterEngine.evaluate(...)`. If `FilterOutcome.passed is False`: update `filings.filter_status=FILTERED_OUT` and return.
   6. Call `DilutionService.get_dilution_data_v2(ticker)` for `ask_edgar_data` (AskEdgar enrichment — only called after all six filters pass; may be partial; non-blocking).
   7. Call `get_classifier().classify(filing_text, form_type)` to get `ClassificationResult`.
+  7.5. **Resolve dilution_severity** (pipeline step between classify and score): compute `dilution_severity = min(classification["_shares_offered_raw"] / fmp_data.float_shares, 1.0)` if `_shares_offered_raw > 0` and `fmp_data` is not None; else `dilution_severity = 0.0`. Patch `classification["dilution_severity"]` with the computed value. Remove `classification["_shares_offered_raw"]` from the dict. Log `DILUTION_SEVERITY_CLAMPED` if the raw ratio exceeded 1.0. This is the authoritative computation point — see Section 3.5.4 of 02-ARCHITECTURE.md.
   8. If `setup_type == "NULL"`: update `filings.processing_status=CLASSIFIED` and return (no score, no signal).
-  9. Call `Scorer.score(classification, fmp_data, ask_edgar_data, borrow_cost)`.
+  9. Call `Scorer.score(classification, fmp_data, borrow_cost)` (3 arguments — `ask_edgar_data` is NOT passed to the Scorer).
   10. Call `SignalManager.emit(scorer_result, classification, fmp_data, accession_number, ticker)`.
   11. Update `filings.processing_status=ALERTED`.
 - All exceptions within `process_filing` are caught and logged; they update `filings.processing_status=ERROR` and do not propagate to the poller loop.

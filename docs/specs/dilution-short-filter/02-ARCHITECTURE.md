@@ -307,7 +307,10 @@ from typing import Protocol, TypedDict
 class ClassificationResult(TypedDict):
     setup_type: str           # "A", "B", "C", "D", "E", or "NULL"
     confidence: float         # 0.0 to 1.0
-    dilution_severity: float  # shares_offered / pre_float
+    dilution_severity: float  # final ratio: shares_offered / fmp_data.float_shares
+                               # Classifier always returns 0.0; pipeline step 7.5 patches this
+                               # to the real ratio before the Scorer is called. 0.0 only if
+                               # shares_offered could not be extracted from the filing text.
     immediate_pressure: bool
     price_discount: float | None  # offering_price / last_close - 1
     short_attractiveness: int     # 0-100 (pre-scorer estimate; scorer may override)
@@ -381,7 +384,8 @@ def get_classifier(name: str | None = None) -> ClassifierProtocol:
   # price_discount = (offering_price / last_close) - 1
   # If no pattern matches: price_discount = None (acceptable; field is optional)
   ```
-- `dilution_severity` = shares_offered / pre_float; shares_offered extracted using the following patterns (try in order, use first match):
+- `shares_offered_raw: int` extraction (used to populate `ClassificationResult.dilution_severity` via pipeline step 7.5):
+  The classifier extracts the raw share count from `filing_text` using the following regex patterns (try in order, first match wins):
   ```python
   SHARES_OFFERED_PATTERNS = [
       r'(\d[\d,]*)\s+shares?\s+of\s+common\s+stock',
@@ -391,9 +395,46 @@ def get_classifier(name: str | None = None) -> ClassifierProtocol:
       r'up\s+to\s+(\d[\d,]*)\s+shares?',
   ]
   # Post-processing: strip commas, convert to int
-  # If no pattern matches: return 0 (filing will fail Filter 4 conservatively)
+  # If no pattern matches: shares_offered_raw = 0 (filing will fail Filter 4 conservatively)
   ```
-  `0.0` if not extractable (scorer will apply conservative default).
+  The classifier stores this extracted integer on the `ClassificationResult` dict as a **transient field**
+  `_shares_offered_raw: int` (underscore prefix signals it is a pipeline-internal value, not a stored field).
+  The classifier always sets `dilution_severity = 0.0` in the returned `ClassificationResult` — the ratio
+  is computed by the pipeline in step 7.5, not by the classifier. See Section 3.5.4 for the authoritative
+  data path.
+
+#### 3.5.4 Dilution Severity Resolution (Pipeline Step 7.5)
+
+**This is the authoritative definition of where and how `dilution_severity` is computed.**
+
+After step 7 (classify) and before step 9 (score), the pipeline executes an explicit resolution step:
+
+```python
+# Pipeline step 7.5 — resolve dilution_severity
+shares_offered_raw: int = classification.get("_shares_offered_raw", 0)
+if shares_offered_raw > 0 and fmp_data is not None and fmp_data.float_shares > 0:
+    dilution_severity = min(shares_offered_raw / fmp_data.float_shares, 1.0)
+else:
+    dilution_severity = 0.0  # conservative; Filter 4 should have already blocked this path
+
+classification["dilution_severity"] = dilution_severity
+```
+
+**Why the pipeline, not the classifier:**
+- The classifier has `filing_text` but does NOT have `fmp_data.float_shares` — the FMP data is fetched
+  at step 4, before classification. Passing `fmp_data` into the classifier would violate I-02
+  (ClassifierProtocol must only receive `filing_text` and `form_type`).
+- The Scorer reads `classification["dilution_severity"]` as an already-resolved float ratio. This
+  contract is preserved. The Scorer never computes the ratio itself.
+- The `labels` table write happens in `SignalManager.emit()` at step 10, which is after step 7.5.
+  Therefore `labels.dilution_severity` always contains the final, real ratio — never 0.0 (unless
+  shares_offered was genuinely not extractable, in which case the filing should have failed Filter 4).
+
+**Clamping**: `dilution_severity` is clamped to `[0.0, 1.0]`. Values above 1.0 are clamped to 1.0
+and logged as `DILUTION_SEVERITY_CLAMPED` with ticker and raw ratio.
+
+**Transient field cleanup**: The `_shares_offered_raw` key is removed from the `ClassificationResult`
+dict by step 7.5 before passing to the Scorer, so the Scorer and downstream consumers never see it.
 
 > **S-3 classifier note**: S-3 filings pass Filter 1 (filing type match) but the classifier has no dedicated S-3 rule. An S-3 filing will classify as NULL unless it also contains keywords that match another setup rule (e.g., a shelf takedown filed as S-3 with "at-the-market" language would match setup type D via the 8-K rule only if the form_type check is bypassed — but form_type is part of the match condition, so a pure S-3 will always NULL). This is intentional: S-3s that do not exhibit specific offering language are not actionable. S-3 filings may contribute to training data as NULL examples.
 
@@ -409,6 +450,10 @@ def get_classifier(name: str | None = None) -> ClassifierProtocol:
 
 **Formula**:
 ```
+# DILUTION_SEVERITY is read from classification_result["dilution_severity"].
+# This value is guaranteed to be the final resolved ratio (shares_offered / fmp_data.float_shares)
+# patched into the ClassificationResult by pipeline step 7.5 before the Scorer is called.
+# The Scorer never computes dilution_severity itself.
 DILUTION_SEVERITY  = classification_result["dilution_severity"]
 FLOAT_ILLIQUIDITY  = settings.adv_min_threshold / fmp_data.adv_dollar
 # FLOAT_ILLIQUIDITY = ADV_MIN_THRESHOLD / adv_dollar where ADV_MIN_THRESHOLD is
@@ -511,7 +556,11 @@ from typing import Protocol, TypedDict
 class ClassificationResult(TypedDict):
     setup_type: str           # "A", "B", "C", "D", "E", or "NULL"
     confidence: float         # 0.0 to 1.0; rule-based: 1.0 on match, 0.0 on NULL
-    dilution_severity: float  # shares_offered / pre_float; 0.0 if not extractable
+    dilution_severity: float  # final ratio: shares_offered / fmp_data.float_shares,
+                               # clamped [0.0, 1.0]. Classifier always returns 0.0;
+                               # pipeline step 7.5 patches this to the real value before
+                               # the Scorer is called. 0.0 only if shares_offered was
+                               # not extractable (filing should have failed Filter 4).
     immediate_pressure: bool  # True for setup types B and C
     price_discount: float | None  # offering_price / last_close - 1; None if not extractable
     short_attractiveness: int     # 0-100; pre-scorer classifier estimate (scorer may override)
@@ -1259,7 +1308,7 @@ No other pipeline changes
 
 - `BORROW_COST == 0`: substitute `settings.default_borrow_cost`; log `BORROW_COST_ZERO_SUBSTITUTED` warning.
 - Raw score outside [0, 100] after normalization: clamp to [0, 100]; log `SCORE_CLAMPED` warning with raw pre-normalization value and ticker.
-- Missing `dilution_severity` (classifier returned 0.0 because shares_offered not extractable): filing fails filter 4 at `FilterEngine` before reaching the scorer (conservative: treat unknown dilution % as failing the 10% threshold).
+- `dilution_severity = 0.0` after pipeline step 7.5: this can only occur if shares_offered was not extractable from the filing text AND Filter 4 was somehow bypassed. Under normal operation Filter 4 blocks such filings before they reach the scorer (conservative: treat unknown dilution % as failing the 10% threshold). If a 0.0 value reaches the Scorer, log `DILUTION_SEVERITY_ZERO` warning; the scorer returns a low score naturally (raw_score = 0), not an error.
 
 ### 11.6 Ticker Resolution Failure
 

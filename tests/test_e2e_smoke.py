@@ -119,6 +119,7 @@ def make_mock_classifier_setup_c():
         "short_attractiveness": 0,
         "key_excerpt": "The shares have been priced at $3.50 per share. This offering is fully underwritten",
         "reasoning": "Setup C: 424B2 filing with 'priced' language.",
+        "_shares_offered_raw": 6_000_000,
     })
     return mock
 
