@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     massive_api_key: str = ""
     askedgar_url: str = "https://eapi.askedgar.io"
     request_timeout: int = 30
-    cors_origins: list = ["*"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://100.70.21.69:3000"]
 
     # New: classifier
     classifier_name: str = "rule-based-v1"

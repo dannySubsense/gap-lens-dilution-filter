@@ -92,6 +92,17 @@ All 16 tests must pass. Any failure is a blocker — the sprint is not closed un
 
 ---
 
+## Known Characteristic: Test Ordering Dependency
+
+QC-11, QC-12, and QC-13 are intentionally ordered — each builds on the state left by the previous:
+- QC-11 records entry_price=5.00 → signal moves to State B
+- QC-12 records cover_price=4.00 → P&L computed, signal closed
+- QC-13 verifies the closed signal appears in Recent Closed panel
+
+A failure in QC-11 will cascade to QC-12 and QC-13. This is by design — it mirrors the real user flow. If QC-12 or QC-13 fail in isolation (QC-11 passed), the root cause is in the cover/close logic, not the entry logic.
+
+---
+
 ## On Failure
 
 1. **Read the failure message** — Playwright prints the failing assertion and a call log showing what it was waiting for.

@@ -272,7 +272,7 @@ def create_app() -> FastAPI:
     fastapi_app = FastAPI(title="gap-lens-dilution-filter", lifespan=lifespan)
     fastapi_app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", f"http://100.70.21.69:3000"],
+        allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
