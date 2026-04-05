@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+httpx
+pydantic-settings
+pytest
+pytest-asyncio
+pytest-cov
+black
+flake8
+mypy

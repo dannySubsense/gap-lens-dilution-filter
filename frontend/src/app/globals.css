@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* ── Gap Research design system ── */
+  --color-bg-primary: #0e111a;
+  --color-bg-alt: #141a24;
+  --color-bg-card: #1b2230;
+  --color-bg-card-hover: #222b3a;
+  --color-bg-input: #0f1622;
+  --color-border-card: #2a3447;
+  --color-text-primary: #eef1f8;
+  --color-text-secondary: #9aa7c7;
+  --color-text-muted: #9aa7c7;
+  --color-accent: #ff4fa6;
+  --color-accent-soft: rgba(255, 79, 166, 0.2);
+  --color-risk-low: #36d29a;
+  --color-risk-medium: #f7b731;
+  --color-risk-high: #ff6b6b;
+  --color-badge-6k: #d97706;
+  --color-badge-s1: #ff6b6b;
+  --color-badge-grok: #8b5cf6;
+  --color-badge-8k: #3b82f6;
+  --color-badge-10k: #06b6d4;
+  --color-badge-sc13: #ec4899;
+  --color-badge-default: #6b7280;
+  --color-accent-red: #ff6b6b;
+  --color-accent-green: #5ce08a;
+  --color-tone-positive: #5ce08a;
+  --color-tone-negative: #ff6b6b;
+  --radius: 9px;
+  --radius-sm: 5px;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+/* Scrollbar styling — matches Gap Research */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-alt);
+  border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-card);
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--color-bg-alt);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4761;
+}
