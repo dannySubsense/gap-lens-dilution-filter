@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.services.classifier.protocol import ClassificationResult
-from app.services.db import get_db
+from app.services.db import db_fetchall, db_fetchone, db_run
 from app.services.fmp_client import FMPMarketData
 from app.services.scorer import ScorerResult
 
@@ -30,11 +30,8 @@ class SignalManager:
         Insert or update a row in signals for ranks A and B.
         Return signal_id for A/B ranks, None for C/D.
         """
-        db = get_db()
-
         # Always write to labels (all ranks)
-        await asyncio.to_thread(
-            db.execute,
+        await db_run(
             """
             INSERT INTO labels (
                 accession_number,
@@ -82,8 +79,7 @@ class SignalManager:
 
         # SETUP_UPDATE check: look for an existing open signal for this ticker
         # within the last 24 hours
-        existing = await asyncio.to_thread(
-            db.execute,
+        row = await db_fetchone(
             """
             SELECT id FROM signals
             WHERE ticker = ?
@@ -93,12 +89,10 @@ class SignalManager:
             """,
             [ticker],
         )
-        row = existing.fetchone()
 
         if row is not None:
             existing_id: int = row[0]
-            await asyncio.to_thread(
-                db.execute,
+            await db_run(
                 """
                 UPDATE signals
                 SET alert_type = 'SETUP_UPDATE',
@@ -123,8 +117,7 @@ class SignalManager:
             classification["setup_type"]
         ]
 
-        result = await asyncio.to_thread(
-            db.execute,
+        inserted = await db_fetchone(
             """
             INSERT INTO signals (
                 accession_number,
@@ -147,7 +140,6 @@ class SignalManager:
                 status,
             ],
         )
-        inserted = result.fetchone()
         if inserted is None:
             raise RuntimeError(
                 f"INSERT INTO signals did not return an id for ticker={ticker}"
@@ -167,9 +159,7 @@ class SignalManager:
         self, signal_id: int, close_reason: str, status: str = "CLOSED"
     ) -> None:
         """Mark a signal as closed with a reason and timestamp."""
-        db = get_db()
-        await asyncio.to_thread(
-            db.execute,
+        await db_run(
             """
             UPDATE signals
             SET status = ?,
@@ -191,26 +181,29 @@ class SignalManager:
         Update entry_price and/or cover_price on a signal.
         If both are provided, compute pnl_pct (short P&L) and close the signal.
         """
-        db = get_db()
-
         if entry_price is not None:
-            await asyncio.to_thread(
-                db.execute,
+            await db_run(
                 "UPDATE signals SET entry_price = ? WHERE id = ?",
                 [entry_price, signal_id],
             )
 
         if cover_price is not None:
-            await asyncio.to_thread(
-                db.execute,
+            await db_run(
                 "UPDATE signals SET cover_price = ? WHERE id = ?",
                 [cover_price, signal_id],
             )
 
-        if entry_price is not None and cover_price is not None:
-            pnl_pct = (entry_price - cover_price) / entry_price * 100
-            await asyncio.to_thread(
-                db.execute,
+        # Compute P&L if both entry and cover are now present in the DB
+        # (they may have been recorded in separate requests)
+        row = await db_fetchone(
+            "SELECT entry_price, cover_price FROM signals WHERE id = ?",
+            [signal_id],
+        )
+        if row and row[0] is not None and row[1] is not None:
+            eff_entry: float = row[0]
+            eff_cover: float = row[1]
+            pnl_pct = (eff_entry - eff_cover) / eff_entry * 100
+            await db_run(
                 "UPDATE signals SET pnl_pct = ? WHERE id = ?",
                 [pnl_pct, signal_id],
             )
@@ -234,9 +227,7 @@ class SignalManager:
             logger.info("Lifecycle loop cancelled; exiting cleanly")
 
     async def _expire_stale_signals(self) -> None:
-        db = get_db()
-        rows = await asyncio.to_thread(
-            db.execute,
+        expired = await db_fetchall(
             """
             SELECT id, setup_type FROM signals
             WHERE status IN ('LIVE', 'WATCHLIST')
@@ -247,7 +238,6 @@ class SignalManager:
               )
             """,
         )
-        expired = rows.fetchall()
         for row in expired:
             signal_id: int = row[0]
             setup_type: str = row[1]

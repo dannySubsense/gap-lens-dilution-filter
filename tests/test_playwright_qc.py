@@ -1,23 +1,25 @@
 """
 Playwright QC — gap-lens-dilution-filter Phase 1
 
-Prerequisites (from docs/TEST_AND_DEPLOY_PLAYBOOK.md):
-  Terminal 1: uvicorn app.main:app --host 0.0.0.0 --port 8000
-  Terminal 2: cd frontend && npm run dev
+Prerequisites — run via the orchestration script:
+  scripts/run_playwright_qc.sh
 
-Run:
-  python3 -m pytest tests/test_playwright_qc.py -v -s
+Or manually (in order):
+  1. python3 scripts/seed_playwright_qc.py   # inject test signal (backend must be stopped)
+  2. uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+  3. cd frontend && npm run dev &
+  4. python3 -m pytest tests/test_playwright_qc.py -v -s
+  5. (stop services)
+  6. python3 scripts/cleanup_playwright_qc.py
 
 Skips automatically if backend or frontend are not reachable.
-Each test is independent; the fixture injects and cleans up a test signal.
+Test signal is seeded externally; this file contains only browser and API assertions.
 """
 
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
-import duckdb
 import httpx
 import pytest
 from playwright.sync_api import Page, sync_playwright, expect
@@ -28,8 +30,6 @@ from playwright.sync_api import Page, sync_playwright, expect
 
 BACKEND_URL = "http://localhost:8000"
 FRONTEND_URL = "http://localhost:3000"
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DUCKDB_PATH = PROJECT_ROOT / "data" / "filter.duckdb"
 
 TEST_ACCESSION = "TEST-PW-QC-001"
 TEST_TICKER = "PWQC"
@@ -88,65 +88,19 @@ def page(browser_context):
 @pytest.fixture(scope="module", autouse=True)
 def test_signal():
     """
-    Insert a WATCHLIST test signal into the live DuckDB before the module runs.
-    Cleaned up after all tests complete.
-    Signal is rank B / WATCHLIST so it appears in the Watchlist panel.
+    Verify the test signal was pre-seeded by scripts/seed_playwright_qc.py.
+    Injection and cleanup are handled externally (see scripts/run_playwright_qc.sh)
+    so this fixture never touches DuckDB while the backend holds its exclusive lock.
     """
-    conn = duckdb.connect(str(DUCKDB_PATH))
-
-    conn.execute(
-        """
-        INSERT INTO filings (
-            accession_number, cik, form_type, filed_at,
-            filing_url, entity_name, processing_status
-        )
-        VALUES (?, '8888888', '424B4', NOW(),
-                'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=8888888',
-                'Playwright QC Corp', 'ALERTED')
-        ON CONFLICT (accession_number) DO NOTHING
-        """,
-        [TEST_ACCESSION],
+    r = httpx.get(f"{BACKEND_URL}/api/v1/signals", timeout=5)
+    assert r.status_code == 200, "Backend /signals endpoint not reachable"
+    signals = r.json().get("signals", [])
+    tickers = [s["ticker"] for s in signals]
+    assert TEST_TICKER in tickers, (
+        f"Test signal '{TEST_TICKER}' not found in /api/v1/signals. "
+        "Run scripts/seed_playwright_qc.py before starting the backend."
     )
-
-    conn.execute(
-        """
-        INSERT INTO signals (
-            accession_number, ticker, setup_type, score, rank,
-            status, alert_type, alerted_at
-        )
-        VALUES (?, ?, 'C', 76, 'B', 'WATCHLIST', 'NEW_SETUP', NOW())
-        ON CONFLICT DO NOTHING
-        """,
-        [TEST_ACCESSION, TEST_TICKER],
-    )
-
-    conn.execute(
-        """
-        INSERT INTO labels (
-            accession_number, classifier_version, setup_type,
-            confidence, dilution_severity, immediate_pressure,
-            price_discount, short_attractiveness, rank,
-            key_excerpt, reasoning
-        )
-        VALUES (?, 'rule-based-v1', 'C',
-                0.95, 0.50, true,
-                0.03, 0, 'B',
-                '2,000,000 shares of common stock at $3.97 per share.',
-                'Playwright QC: Setup C with priced offering.')
-        ON CONFLICT (accession_number, classifier_version) DO NOTHING
-        """,
-        [TEST_ACCESSION],
-    )
-
-    conn.close()
     yield
-
-    # Cleanup
-    conn = duckdb.connect(str(DUCKDB_PATH))
-    conn.execute("DELETE FROM labels  WHERE accession_number = ?", [TEST_ACCESSION])
-    conn.execute("DELETE FROM signals WHERE accession_number = ?", [TEST_ACCESSION])
-    conn.execute("DELETE FROM filings WHERE accession_number = ?", [TEST_ACCESSION])
-    conn.close()
 
 
 # ---------------------------------------------------------------------------

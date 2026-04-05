@@ -109,9 +109,7 @@ async def test_process_filing_happy_path_pending_to_alerted(mem_db):
     fmp_data = make_fmp_data()
 
     with (
-        patch("app.main.get_db", return_value=mem_db),
-        patch("app.services.signal_manager.get_db", return_value=mem_db),
-        patch("app.services.filter_engine.get_db", return_value=mem_db),
+        patch("app.services.db._conn", new=mem_db),
         patch("app.main.TickerResolver.resolve", return_value="ACME"),
         patch("app.main.FilingFetcher.fetch", new=AsyncMock(
             return_value="prospectus offering shares S-1 filing text"
@@ -266,9 +264,7 @@ async def test_process_filing_askedgar_degradation(mem_db):
     fmp_data = make_fmp_data()
 
     with (
-        patch("app.main.get_db", return_value=mem_db),
-        patch("app.services.signal_manager.get_db", return_value=mem_db),
-        patch("app.services.filter_engine.get_db", return_value=mem_db),
+        patch("app.services.db._conn", new=mem_db),
         patch("app.main.TickerResolver.resolve", return_value="ACME"),
         patch("app.main.FilingFetcher.fetch", new=AsyncMock(
             return_value="prospectus offering shares S-1 filing text"

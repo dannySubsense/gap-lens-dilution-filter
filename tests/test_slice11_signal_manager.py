@@ -104,7 +104,7 @@ async def test_emit_rank_a_inserts_live_signal_and_label(mem_db):
     classification = make_classification(setup_type="A")
     fmp = make_fmp_data()
 
-    with patch("app.services.signal_manager.get_db", return_value=mem_db):
+    with patch("app.services.db._conn", new=mem_db):
         signal_id = await manager.emit(
             scorer_result=scorer,
             classification=classification,
@@ -142,7 +142,7 @@ async def test_emit_rank_c_no_signal_but_one_label(mem_db):
     classification = make_classification(setup_type="C")
     fmp = make_fmp_data()
 
-    with patch("app.services.signal_manager.get_db", return_value=mem_db):
+    with patch("app.services.db._conn", new=mem_db):
         result = await manager.emit(
             scorer_result=scorer,
             classification=classification,
@@ -181,7 +181,7 @@ async def test_emit_twice_same_ticker_produces_setup_update(mem_db):
     classification = make_classification(setup_type="A")
     fmp = make_fmp_data()
 
-    with patch("app.services.signal_manager.get_db", return_value=mem_db):
+    with patch("app.services.db._conn", new=mem_db):
         first_id = await manager.emit(
             scorer_result=scorer_a,
             classification=classification,
@@ -223,7 +223,7 @@ async def test_record_position_computes_pnl_and_closes_signal(mem_db):
     classification = make_classification(setup_type="A")
     fmp = make_fmp_data()
 
-    with patch("app.services.signal_manager.get_db", return_value=mem_db):
+    with patch("app.services.db._conn", new=mem_db):
         signal_id = await manager.emit(
             scorer_result=scorer,
             classification=classification,
@@ -263,7 +263,7 @@ async def test_record_position_entry_only_does_not_close(mem_db):
     classification = make_classification(setup_type="A")
     fmp = make_fmp_data()
 
-    with patch("app.services.signal_manager.get_db", return_value=mem_db):
+    with patch("app.services.db._conn", new=mem_db):
         signal_id = await manager.emit(
             scorer_result=scorer,
             classification=classification,
@@ -303,7 +303,7 @@ async def test_lifecycle_closes_stale_setup_a_signal(mem_db):
     classification = make_classification(setup_type="A")
     fmp = make_fmp_data()
 
-    with patch("app.services.signal_manager.get_db", return_value=mem_db):
+    with patch("app.services.db._conn", new=mem_db):
         signal_id = await manager.emit(
             scorer_result=scorer,
             classification=classification,
@@ -318,7 +318,7 @@ async def test_lifecycle_closes_stale_setup_a_signal(mem_db):
         [signal_id],
     )
 
-    with patch("app.services.signal_manager.get_db", return_value=mem_db):
+    with patch("app.services.db._conn", new=mem_db):
         await manager._expire_stale_signals()
 
     row = mem_db.execute(
@@ -356,7 +356,7 @@ async def test_lifecycle_does_not_close_setup_d_signal(mem_db):
     ).fetchone()[0]
 
     manager = SignalManager()
-    with patch("app.services.signal_manager.get_db", return_value=mem_db):
+    with patch("app.services.db._conn", new=mem_db):
         await manager._expire_stale_signals()
 
     row = mem_db.execute(

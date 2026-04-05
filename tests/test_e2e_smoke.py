@@ -147,10 +147,7 @@ def patched_app(mem_db):
         patch("app.main.EdgarPoller.run_forever", new=AsyncMock()),
         patch("app.main.SignalManager.run_lifecycle_loop", new=AsyncMock()),
         patch("app.main.EdgarPoller.set_process_filing"),
-        patch("app.main.get_db", return_value=mem_db),
-        patch("app.services.signal_manager.get_db", return_value=mem_db),
-        patch("app.services.filter_engine.get_db", return_value=mem_db),
-        patch("app.api.v1.routes.get_db", return_value=mem_db),
+        patch("app.services.db._conn", new=mem_db),
     ):
         from app.main import app
         yield app, mem_db

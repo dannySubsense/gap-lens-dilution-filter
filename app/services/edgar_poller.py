@@ -182,13 +182,20 @@ class EdgarPoller:
                 resp = await client.get(settings.edgar_efts_url, params=params)
                 resp.raise_for_status()
                 try:
-                    return resp.json()
+                    parsed = resp.json()
                 except Exception:
                     excerpt = resp.text[:500]
                     logger.error(
                         "EFTS malformed JSON (attempt %d): %s", attempt, excerpt
                     )
                     return None
+                if not isinstance(parsed, dict):
+                    logger.error(
+                        "EFTS unexpected response type %s (attempt %d): %r",
+                        type(parsed).__name__, attempt, str(parsed)[:200],
+                    )
+                    return None
+                return parsed
             except (httpx.RequestError, httpx.HTTPStatusError) as exc:
                 logger.warning("EFTS request attempt %d failed: %s", attempt, exc)
                 last_exc = exc

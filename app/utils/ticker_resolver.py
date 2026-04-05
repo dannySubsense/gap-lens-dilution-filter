@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from app.services.db import get_db
+from app.services.db import _sync_execute, _sync_executemany, _sync_fetchone, get_db  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +41,22 @@ class TickerResolver:
             data = resp.json()
 
         rows = data.get("data", [])
-        db = get_db()
-        db.execute("DELETE FROM cik_ticker_map")
-        db.executemany(
+
+        # Deduplicate by CIK — SEC data lists some companies on multiple exchanges;
+        # keep the first occurrence (primary listing appears first in the file).
+        seen: dict[int, tuple] = {}
+        for r in rows:
+            cik = int(r[0])
+            if cik not in seen:
+                seen[cik] = (cik, r[2], r[1], r[3])
+
+        _sync_execute("DELETE FROM cik_ticker_map")
+        _sync_executemany(
             "INSERT INTO cik_ticker_map (cik, ticker, name, exchange) VALUES (?, ?, ?, ?)",
-            [(int(r[0]), r[2], r[1], r[3]) for r in rows],
+            list(seen.values()),
         )
         _last_refresh = now
-        logger.info("TickerResolver: loaded %d tickers", len(rows))
+        logger.info("TickerResolver: loaded %d tickers (%d dupes dropped)", len(seen), len(rows) - len(seen))
 
     @staticmethod
     def resolve(
@@ -66,10 +74,9 @@ class TickerResolver:
         # Step 1: DuckDB cik_ticker_map lookup
         try:
             cik_int = int(cik.lstrip("0") or "0")
-            db = get_db()
-            row = db.execute(
+            row = _sync_fetchone(
                 "SELECT ticker FROM cik_ticker_map WHERE cik = ?", [cik_int]
-            ).fetchone()
+            )
             if row:
                 return row[0]
         except Exception as exc:

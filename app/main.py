@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
@@ -269,6 +270,13 @@ def create_app() -> FastAPI:
     from app.api.v1.routes import router as v1_router
 
     fastapi_app = FastAPI(title="gap-lens-dilution-filter", lifespan=lifespan)
+    fastapi_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", f"http://100.70.21.69:3000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     fastapi_app.add_api_route("/health", health, methods=["GET"])
     fastapi_app.include_router(v1_router, prefix="/api/v1")
     return fastapi_app

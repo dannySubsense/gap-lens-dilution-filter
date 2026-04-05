@@ -1,10 +1,16 @@
+import asyncio
 import duckdb
 import logging
+import threading
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 _conn: duckdb.DuckDBPyConnection | None = None
+# Serializes all DuckDB access across asyncio.to_thread calls.
+# A single connection is not safe for concurrent use from multiple threads
+# because execute() and fetchall() must be atomic.
+_db_lock = threading.Lock()
 
 
 def get_db() -> duckdb.DuckDBPyConnection:
@@ -18,9 +24,56 @@ def init_db() -> None:
     """Initialize the DuckDB connection and create all tables. Idempotent."""
     global _conn
     if _conn is None:
-        _conn = duckdb.connect(settings.duckdb_path)
+        _conn = duckdb.connect(settings.duckdb_path, config={"threads": 1})
     _create_schema(_conn)
     logger.info("DuckDB initialized at %s", settings.duckdb_path)
+
+
+# ---------------------------------------------------------------------------
+# Thread-safe async helpers — always use these instead of asyncio.to_thread(db.execute)
+# ---------------------------------------------------------------------------
+
+def _sync_fetchall(query: str, params=None) -> list:
+    with _db_lock:
+        conn = get_db()
+        return conn.execute(query, params).fetchall() if params is not None else conn.execute(query).fetchall()
+
+
+def _sync_fetchone(query: str, params=None):
+    with _db_lock:
+        conn = get_db()
+        return conn.execute(query, params).fetchone() if params is not None else conn.execute(query).fetchone()
+
+
+def _sync_execute(query: str, params=None) -> None:
+    with _db_lock:
+        conn = get_db()
+        if params is not None:
+            conn.execute(query, params)
+        else:
+            conn.execute(query)
+
+
+def _sync_executemany(query: str, params: list) -> None:
+    with _db_lock:
+        conn = get_db()
+        conn.executemany(query, params)
+
+
+async def db_fetchall(query: str, params=None) -> list:
+    return await asyncio.to_thread(_sync_fetchall, query, params)
+
+
+async def db_fetchone(query: str, params=None):
+    return await asyncio.to_thread(_sync_fetchone, query, params)
+
+
+async def db_run(query: str, params=None) -> None:
+    await asyncio.to_thread(_sync_execute, query, params)
+
+
+async def db_executemany(query: str, params: list) -> None:
+    await asyncio.to_thread(_sync_executemany, query, params)
 
 
 def _create_schema(conn: duckdb.DuckDBPyConnection) -> None:

@@ -44,7 +44,7 @@ def mem_db():
     conn.execute(
         "INSERT INTO cik_ticker_map VALUES (320193, 'AAPL', 'Apple Inc', 'Nasdaq')"
     )
-    with patch("app.utils.ticker_resolver.get_db", return_value=conn):
+    with patch("app.services.db._conn", new=conn):
         yield conn
     conn.close()
 
