@@ -6,12 +6,12 @@
 - [x] Slice 1: Project Scaffold — COMPLETE (2026-04-05, commit f599ca7, 29/29 tests)
 - [x] Slice 2: DuckDB Foundation — COMPLETE (2026-04-05, commit 3ccc347, 10/10 tests)
 - [x] Slice 3: Config Extension — COMPLETE (2026-04-05, commit 3ccc347, 17/17 tests)
-- [ ] Slice 4: Pydantic Models — PENDING
-- [ ] Slice 5: FMP Client — PENDING
-- [ ] Slice 6: Filing Fetcher + Ticker Resolver — PENDING
-- [ ] Slice 7: EDGAR Poller — PENDING
-- [ ] Slice 8: Filter Engine — PENDING
-- [ ] Slice 9: Classifier Protocol + Rule-Based — PENDING
+- [x] Slice 4: Pydantic Models — COMPLETE (2026-04-05, commit cac3d12, 15/15 tests)
+- [x] Slice 5: FMP Client — COMPLETE (2026-04-05, commit cac3d12, 7/7 tests)
+- [x] Slice 6: Filing Fetcher + Ticker Resolver — COMPLETE (2026-04-05, commit cac3d12, 13/13 tests)
+- [x] Slice 7: EDGAR Poller — COMPLETE (2026-04-05, commit TBD, 6/6 tests)
+- [x] Slice 8: Filter Engine — COMPLETE (2026-04-05, commit TBD, 16/16 tests)
+- [x] Slice 9: Classifier Protocol + Rule-Based — COMPLETE (2026-04-05, commit TBD, 18/18 tests)
 - [ ] Slice 10: Scorer — PENDING
 - [ ] Slice 11: Signal Manager — PENDING
 - [ ] Slice 12: Pipeline Integration — PENDING
@@ -22,7 +22,7 @@
 - [ ] Slice 17: End-to-End Smoke Test — PENDING
 
 ## Current
-Slice: 4 + 5 + 6 (parallel)
+Slice: 10
 Step: @code-executor
 Last updated: 2026-04-05
 
