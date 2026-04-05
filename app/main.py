@@ -248,8 +248,11 @@ async def health() -> dict:
 
 def create_app() -> FastAPI:
     """Factory function for the FastAPI application."""
+    from app.api.v1.routes import router as v1_router
+
     fastapi_app = FastAPI(title="gap-lens-dilution-filter", lifespan=lifespan)
     fastapi_app.add_api_route("/health", health, methods=["GET"])
+    fastapi_app.include_router(v1_router, prefix="/api/v1")
     return fastapi_app
 
 
