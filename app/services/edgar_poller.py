@@ -35,9 +35,7 @@ class EdgarPoller:
     def last_success_at(self) -> datetime | None:
         return self._last_success_at
 
-    def set_process_filing(
-        self, fn: Callable[..., Coroutine[Any, Any, None]]
-    ) -> None:
+    def set_process_filing(self, fn: Callable[..., Coroutine[Any, Any, None]]) -> None:
         """Wire in the full pipeline function (called in Slice 12)."""
         self._process_filing = fn
 
@@ -55,7 +53,9 @@ class EdgarPoller:
     async def _poll_once(self) -> None:
         """Fetch one page of EFTS results, deduplicate, and dispatch new filings."""
         self._last_poll_at = datetime.now(timezone.utc)
-        await asyncio.to_thread(self._update_poll_state, last_poll_at=self._last_poll_at)
+        await asyncio.to_thread(
+            self._update_poll_state, last_poll_at=self._last_poll_at
+        )
 
         db = get_db()
         row = db.execute(
@@ -68,7 +68,7 @@ class EdgarPoller:
                 last_success = datetime.fromisoformat(last_success)
             startdt = max(
                 last_success.date(),
-                (datetime.now(timezone.utc) - timedelta(days=1)).date()
+                (datetime.now(timezone.utc) - timedelta(days=1)).date(),
             )
         else:
             startdt = (datetime.now(timezone.utc) - timedelta(days=1)).date()
@@ -127,8 +127,13 @@ class EdgarPoller:
                         filed_at = datetime.now(timezone.utc)
 
                     await self._process_new_filing(
-                        accession_no, cik, form_type, filed_at,
-                        filing_url, entity_name, ticker,
+                        accession_no,
+                        cik,
+                        form_type,
+                        filed_at,
+                        filing_url,
+                        entity_name,
+                        ticker,
                     )
 
                 offset += len(hits)
@@ -152,32 +157,24 @@ class EdgarPoller:
         entity_name: str | None,
         ticker: str | None,
     ) -> None:
-        """
-        Stub: write PENDING row to filings and attempt FilingFetcher.fetch().
-        Full pipeline wiring happens in Slice 12 via set_process_filing().
-        """
+        """Dispatch to the full pipeline callback, or log and skip."""
         if self._process_filing is not None:
             await self._process_filing(
-                accession_number, cik, form_type, filed_at, filing_url,
-                entity_name, ticker,
+                accession_number,
+                cik,
+                form_type,
+                filed_at,
+                filing_url,
+                entity_name,
+                ticker,
             )
-            return
+        else:
+            logger.debug(
+                "No process_filing callback registered; skipping %s",
+                accession_number,
+            )
 
-        # Slice 7 stub: write PENDING row only
-        db = get_db()
-        await asyncio.to_thread(
-            db.execute,
-            """INSERT INTO filings
-               (accession_number, cik, form_type, filed_at, filing_url,
-                entity_name, ticker, filter_status, processing_status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', 'PENDING')""",
-            [accession_number, cik, form_type, filed_at, filing_url,
-             entity_name, ticker],
-        )
-
-    async def _fetch_efts(
-        self, client: httpx.AsyncClient, params: dict
-    ) -> dict | None:
+    async def _fetch_efts(self, client: httpx.AsyncClient, params: dict) -> dict | None:
         """Fetch one EFTS page with retry. Returns parsed JSON or None on failure."""
         last_exc: Exception | None = None
         for attempt, backoff in enumerate(_BACKOFF, start=1):
