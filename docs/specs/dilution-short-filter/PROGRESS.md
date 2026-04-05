@@ -20,10 +20,11 @@
 - [x] Slice 15: Signal Rows + Auto-Refresh — COMPLETE (2026-04-05, commit cf0eb51, tsc PASS)
 - [x] Slice 16: Setup Detail + Position Tracking — COMPLETE (2026-04-05, commit e55f484, tsc PASS)
 - [x] Slice 17: End-to-End Smoke Test — COMPLETE (2026-04-05, commit e55f484, 1/1 tests)
+- [x] Post-Slice Fix: dilution_severity pipeline step 7.5 — COMPLETE (2026-04-05, commit 59adcb3, 161/161 tests)
 
 ## Current
 Slice: ALL COMPLETE
-Step: DONE
+Step: DONE — Phase 1 fully resolved, 161/161 tests passing
 Last updated: 2026-04-05
 
 ## Fix Attempts
