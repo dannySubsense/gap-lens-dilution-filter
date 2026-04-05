@@ -2,8 +2,14 @@
 import { useEffect, useState } from "react";
 import { getClosedSignals } from "@/services/api";
 import type { SignalRow } from "@/types/signals";
+import SignalRow_ from "@/components/SignalRow";
 
 type PanelState = "loading" | "empty" | "error" | "data";
+
+interface RecentClosedPanelProps {
+  refreshTick: number;
+  onSignalClick: (id: number) => void;
+}
 
 function SkeletonRow() {
   return (
@@ -19,7 +25,7 @@ function SkeletonRow() {
   );
 }
 
-export default function RecentClosedPanel() {
+export default function RecentClosedPanel({ refreshTick, onSignalClick }: RecentClosedPanelProps) {
   const [panelState, setPanelState] = useState<PanelState>("loading");
   const [signals, setSignals] = useState<SignalRow[]>([]);
 
@@ -29,8 +35,13 @@ export default function RecentClosedPanel() {
     async function fetchData() {
       try {
         const result = await getClosedSignals(controller.signal);
-        setSignals(result.signals);
-        setPanelState(result.signals.length === 0 ? "empty" : "data");
+        const sorted = [...result.signals].sort((a, b) => {
+          const tA = a.closed_at ? new Date(a.closed_at).getTime() : 0;
+          const tB = b.closed_at ? new Date(b.closed_at).getTime() : 0;
+          return tB - tA;
+        });
+        setSignals(sorted);
+        setPanelState(sorted.length === 0 ? "empty" : "data");
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
         setPanelState("error");
@@ -39,7 +50,8 @@ export default function RecentClosedPanel() {
 
     fetchData();
     return () => controller.abort();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTick]);
 
   const count = panelState === "data" ? signals.length : 0;
 
@@ -142,6 +154,18 @@ export default function RecentClosedPanel() {
         <p style={{ color: "var(--text-muted)", fontSize: "14px", margin: 0 }}>
           No closed setups yet
         </p>
+      )}
+      {panelState === "data" && signals.length > 0 && (
+        <div>
+          {signals.map((s) => (
+            <SignalRow_
+              key={s.id}
+              signal={s}
+              panelType="closed"
+              onClick={onSignalClick}
+            />
+          ))}
+        </div>
       )}
     </section>
   );

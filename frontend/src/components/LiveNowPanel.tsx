@@ -1,9 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSignals } from "@/services/api";
 import type { SignalRow } from "@/types/signals";
+import SignalRow_ from "@/components/SignalRow";
 
 type PanelState = "loading" | "empty" | "error" | "data";
+
+interface LiveNowPanelProps {
+  refreshTick: number;
+  onSignalClick: (id: number) => void;
+}
 
 function SkeletonRow() {
   return (
@@ -19,9 +25,11 @@ function SkeletonRow() {
   );
 }
 
-export default function LiveNowPanel() {
+export default function LiveNowPanel({ refreshTick, onSignalClick }: LiveNowPanelProps) {
   const [panelState, setPanelState] = useState<PanelState>("loading");
   const [signals, setSignals] = useState<SignalRow[]>([]);
+  const seenIdsRef = useRef<Set<number>>(new Set());
+  const newIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -29,7 +37,21 @@ export default function LiveNowPanel() {
     async function fetchData() {
       try {
         const result = await getSignals(controller.signal);
-        const live = result.signals.filter((s) => s.status === "LIVE");
+        const live = result.signals
+          .filter((s) => s.status === "LIVE")
+          .sort((a, b) => b.score - a.score);
+
+        // Diff to find genuinely new ids
+        const incoming = new Set(live.map((s) => s.id));
+        const fresh: Set<number> = new Set();
+        for (const id of incoming) {
+          if (!seenIdsRef.current.has(id)) {
+            fresh.add(id);
+          }
+        }
+        seenIdsRef.current = incoming;
+        newIdsRef.current = fresh;
+
         setSignals(live);
         setPanelState(live.length === 0 ? "empty" : "data");
       } catch (err) {
@@ -40,7 +62,8 @@ export default function LiveNowPanel() {
 
     fetchData();
     return () => controller.abort();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTick]);
 
   const count = panelState === "data" ? signals.length : 0;
   const isPulsing = panelState === "data" && count > 0;
@@ -145,6 +168,19 @@ export default function LiveNowPanel() {
         <p style={{ color: "var(--text-muted)", fontSize: "14px", margin: 0 }}>
           No active setups
         </p>
+      )}
+      {panelState === "data" && signals.length > 0 && (
+        <div>
+          {signals.map((s) => (
+            <SignalRow_
+              key={s.id}
+              signal={s}
+              panelType="live"
+              onClick={onSignalClick}
+              isNew={newIdsRef.current.has(s.id)}
+            />
+          ))}
+        </div>
       )}
     </section>
   );

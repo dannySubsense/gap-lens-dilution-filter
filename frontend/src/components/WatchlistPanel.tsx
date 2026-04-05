@@ -2,8 +2,14 @@
 import { useEffect, useState } from "react";
 import { getSignals } from "@/services/api";
 import type { SignalRow } from "@/types/signals";
+import SignalRow_ from "@/components/SignalRow";
 
 type PanelState = "loading" | "empty" | "error" | "data";
+
+interface WatchlistPanelProps {
+  refreshTick: number;
+  onSignalClick: (id: number) => void;
+}
 
 function SkeletonRow() {
   return (
@@ -19,7 +25,7 @@ function SkeletonRow() {
   );
 }
 
-export default function WatchlistPanel() {
+export default function WatchlistPanel({ refreshTick, onSignalClick }: WatchlistPanelProps) {
   const [panelState, setPanelState] = useState<PanelState>("loading");
   const [signals, setSignals] = useState<SignalRow[]>([]);
 
@@ -29,7 +35,9 @@ export default function WatchlistPanel() {
     async function fetchData() {
       try {
         const result = await getSignals(controller.signal);
-        const watchlist = result.signals.filter((s) => s.status === "WATCHLIST");
+        const watchlist = result.signals
+          .filter((s) => s.status === "WATCHLIST")
+          .sort((a, b) => b.score - a.score);
         setSignals(watchlist);
         setPanelState(watchlist.length === 0 ? "empty" : "data");
       } catch (err) {
@@ -40,7 +48,8 @@ export default function WatchlistPanel() {
 
     fetchData();
     return () => controller.abort();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTick]);
 
   const count = panelState === "data" ? signals.length : 0;
 
@@ -143,6 +152,18 @@ export default function WatchlistPanel() {
         <p style={{ color: "var(--text-muted)", fontSize: "14px", margin: 0 }}>
           No setups on watchlist
         </p>
+      )}
+      {panelState === "data" && signals.length > 0 && (
+        <div>
+          {signals.map((s) => (
+            <SignalRow_
+              key={s.id}
+              signal={s}
+              panelType="watchlist"
+              onClick={onSignalClick}
+            />
+          ))}
+        </div>
       )}
     </section>
   );

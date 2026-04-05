@@ -102,3 +102,9 @@ body {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes row-arrive {
+  from { background-color: #1a3a3a; }
+  to   { background-color: var(--bg-card); }
+}
+.signal-row-new { animation: row-arrive 3s ease-out forwards; }

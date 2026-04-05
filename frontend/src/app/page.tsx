@@ -8,6 +8,7 @@ import { getHealth } from "@/services/api";
 
 export default function DashboardPage() {
   const [fmpWarning, setFmpWarning] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -24,6 +25,16 @@ export default function DashboardPage() {
     checkHealth();
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const intervalMs = Number(process.env.NEXT_PUBLIC_REFRESH_INTERVAL_MS ?? 30_000);
+    const id = setInterval(() => setRefreshTick((t) => t + 1), intervalMs);
+    return () => clearInterval(id);
+  }, []);
+
+  function handleSignalClick(id: number) {
+    console.log("clicked signal", id);
+  }
 
   return (
     <div className="dsf-page">
@@ -52,9 +63,9 @@ export default function DashboardPage() {
             FMP API key not configured — enrichment disabled. Check your .env file.
           </div>
         )}
-        <LiveNowPanel />
-        <WatchlistPanel />
-        <RecentClosedPanel />
+        <LiveNowPanel refreshTick={refreshTick} onSignalClick={handleSignalClick} />
+        <WatchlistPanel refreshTick={refreshTick} onSignalClick={handleSignalClick} />
+        <RecentClosedPanel refreshTick={refreshTick} onSignalClick={handleSignalClick} />
       </main>
     </div>
   );
