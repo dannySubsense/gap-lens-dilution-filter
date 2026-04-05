@@ -15,7 +15,7 @@
 - [x] Slice 10: Scorer — COMPLETE (2026-04-05, commit 7abbe24, 9/9 tests)
 - [x] Slice 11: Signal Manager — COMPLETE (2026-04-05, commit 9f1159e, 7/7 tests)
 - [x] Slice 12: Pipeline Integration — COMPLETE (2026-04-05, commit 07ab170, 6/6 tests)
-- [x] Slice 13: API Routes — COMPLETE (2026-04-05, commit TBD, 7/7 tests)
+- [x] Slice 13: API Routes — COMPLETE (2026-04-05, commit 1ef4eb2, 7/7 tests)
 - [ ] Slice 14: Frontend Shell — PENDING
 - [ ] Slice 15: Signal Rows + Auto-Refresh — PENDING
 - [ ] Slice 16: Setup Detail + Position Tracking — PENDING
