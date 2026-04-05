@@ -4,11 +4,13 @@ import Header from "@/components/Header";
 import LiveNowPanel from "@/components/LiveNowPanel";
 import WatchlistPanel from "@/components/WatchlistPanel";
 import RecentClosedPanel from "@/components/RecentClosedPanel";
+import SetupDetailModal from "@/components/SetupDetailModal";
 import { getHealth } from "@/services/api";
 
 export default function DashboardPage() {
   const [fmpWarning, setFmpWarning] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [selectedSignalId, setSelectedSignalId] = useState<number | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -33,7 +35,7 @@ export default function DashboardPage() {
   }, []);
 
   function handleSignalClick(id: number) {
-    console.log("clicked signal", id);
+    setSelectedSignalId(id);
   }
 
   return (
@@ -67,6 +69,10 @@ export default function DashboardPage() {
         <WatchlistPanel refreshTick={refreshTick} onSignalClick={handleSignalClick} />
         <RecentClosedPanel refreshTick={refreshTick} onSignalClick={handleSignalClick} />
       </main>
+      <SetupDetailModal
+        signalId={selectedSignalId}
+        onClose={() => setSelectedSignalId(null)}
+      />
     </div>
   );
 }

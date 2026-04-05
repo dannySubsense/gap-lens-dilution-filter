@@ -64,10 +64,22 @@ def mem_db():
 
 @pytest.mark.asyncio
 async def test_three_hits_produce_three_pending_rows(mem_db):
-    """_poll_once() with 3 EFTS hits must insert 3 rows with processing_status='PENDING'."""
+    """_poll_once() with 3 EFTS hits must invoke process_filing for each, producing 3 PENDING rows."""
     from app.services.edgar_poller import EdgarPoller  # noqa: PLC0415
+    from datetime import datetime
 
     poller = EdgarPoller()
+
+    # Simulate process_filing writing a PENDING row (as it does in the real pipeline)
+    async def fake_process_filing(accession_number, cik, form_type, filed_at, filing_url,
+                                   entity_name=None, efts_ticker=None):
+        mem_db.execute(
+            "INSERT INTO filings (accession_number, cik, form_type, filed_at, filing_url, processing_status)"
+            " VALUES (?, ?, ?, ?, ?, 'PENDING') ON CONFLICT (accession_number) DO NOTHING",
+            [accession_number, cik, form_type, filed_at, filing_url],
+        )
+
+    poller.set_process_filing(fake_process_filing)
 
     with patch("app.services.edgar_poller.get_db", return_value=mem_db), \
          patch("asyncio.sleep", new_callable=AsyncMock), \
@@ -94,6 +106,16 @@ async def test_deduplication_no_duplicate_rows_on_second_poll(mem_db):
     from app.services.edgar_poller import EdgarPoller  # noqa: PLC0415
 
     poller = EdgarPoller()
+
+    async def fake_process_filing(accession_number, cik, form_type, filed_at, filing_url,
+                                   entity_name=None, efts_ticker=None):
+        mem_db.execute(
+            "INSERT INTO filings (accession_number, cik, form_type, filed_at, filing_url, processing_status)"
+            " VALUES (?, ?, ?, ?, ?, 'PENDING') ON CONFLICT (accession_number) DO NOTHING",
+            [accession_number, cik, form_type, filed_at, filing_url],
+        )
+
+    poller.set_process_filing(fake_process_filing)
 
     with patch("app.services.edgar_poller.get_db", return_value=mem_db), \
          patch("asyncio.sleep", new_callable=AsyncMock), \
