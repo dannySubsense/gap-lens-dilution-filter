@@ -12,7 +12,7 @@
 - [x] Slice 7: EDGAR Poller — COMPLETE (2026-04-05, commit 66ed0f0, 6/6 tests)
 - [x] Slice 8: Filter Engine — COMPLETE (2026-04-05, commit 66ed0f0, 16/16 tests)
 - [x] Slice 9: Classifier Protocol + Rule-Based — COMPLETE (2026-04-05, commit 66ed0f0, 18/18 tests)
-- [ ] Slice 10: Scorer — PENDING
+- [x] Slice 10: Scorer — COMPLETE (2026-04-05, commit TBD, 9/9 tests)
 - [ ] Slice 11: Signal Manager — PENDING
 - [ ] Slice 12: Pipeline Integration — PENDING
 - [ ] Slice 13: API Routes — PENDING
@@ -22,8 +22,8 @@
 - [ ] Slice 17: End-to-End Smoke Test — PENDING
 
 ## Current
-Slice: 10
-Step: @code-executor
+Slice: 11
+Step: @test-runner
 Last updated: 2026-04-05
 
 ## Fix Attempts

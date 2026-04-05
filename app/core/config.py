@@ -21,9 +21,7 @@ class Settings(BaseSettings):
 
     # New: EDGAR poller
     edgar_poll_interval: int = 90
-    edgar_efts_url: str = (
-        "https://efts.sec.gov/LATEST/search-index?forms=S-1,S-1%2FA,S-3,424B2,424B4,8-K,13D%2FA"
-    )
+    edgar_efts_url: str = "https://efts.sec.gov/LATEST/search-index"
 
     # New: storage
     duckdb_path: str = "./data/filter.duckdb"
