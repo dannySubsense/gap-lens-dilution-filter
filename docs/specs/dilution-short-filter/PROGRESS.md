@@ -9,9 +9,9 @@
 - [x] Slice 4: Pydantic Models — COMPLETE (2026-04-05, commit cac3d12, 15/15 tests)
 - [x] Slice 5: FMP Client — COMPLETE (2026-04-05, commit cac3d12, 7/7 tests)
 - [x] Slice 6: Filing Fetcher + Ticker Resolver — COMPLETE (2026-04-05, commit cac3d12, 13/13 tests)
-- [x] Slice 7: EDGAR Poller — COMPLETE (2026-04-05, commit TBD, 6/6 tests)
-- [x] Slice 8: Filter Engine — COMPLETE (2026-04-05, commit TBD, 16/16 tests)
-- [x] Slice 9: Classifier Protocol + Rule-Based — COMPLETE (2026-04-05, commit TBD, 18/18 tests)
+- [x] Slice 7: EDGAR Poller — COMPLETE (2026-04-05, commit 66ed0f0, 6/6 tests)
+- [x] Slice 8: Filter Engine — COMPLETE (2026-04-05, commit 66ed0f0, 16/16 tests)
+- [x] Slice 9: Classifier Protocol + Rule-Based — COMPLETE (2026-04-05, commit 66ed0f0, 18/18 tests)
 - [ ] Slice 10: Scorer — PENDING
 - [ ] Slice 11: Signal Manager — PENDING
 - [ ] Slice 12: Pipeline Integration — PENDING
