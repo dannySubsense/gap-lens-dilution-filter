@@ -54,3 +54,51 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #3a4761;
 }
+
+/* ── Dilution Short Filter design system ── */
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-card: #2d2d2d;
+  --bg-card-hover: #333333;
+  --bg-input: #252525;
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+  --border-color: #444444;
+  --border-input: #555555;
+  --accent-cyan: #00bcd4;
+  --accent-cyan-hover: #00acc1;
+  --positive: #4caf50;
+  --negative: #f44336;
+  --warning: #ff9800;
+  --rank-a: #f44336;
+  --rank-b: #ff9800;
+  --rank-c: #ffc107;
+  --rank-d: #9e9e9e;
+  --rank-e: #ce93d8;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+}
+
+.dsf-page {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  min-height: 100vh;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes new-row-pulse {
+  0% { background-color: #1a3a3a; }
+  100% { background-color: var(--bg-card); }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }

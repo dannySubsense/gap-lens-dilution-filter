@@ -1,0 +1,61 @@
+"use client";
+import { useEffect, useState } from "react";
+import Header from "@/components/Header";
+import LiveNowPanel from "@/components/LiveNowPanel";
+import WatchlistPanel from "@/components/WatchlistPanel";
+import RecentClosedPanel from "@/components/RecentClosedPanel";
+import { getHealth } from "@/services/api";
+
+export default function DashboardPage() {
+  const [fmpWarning, setFmpWarning] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function checkHealth() {
+      try {
+        const health = await getHealth(controller.signal);
+        setFmpWarning(!health.fmp_configured);
+      } catch {
+        // Health check failure is surfaced by HealthBar; no page-level action needed
+      }
+    }
+
+    checkHealth();
+    return () => controller.abort();
+  }, []);
+
+  return (
+    <div className="dsf-page">
+      <Header />
+      <main
+        style={{
+          maxWidth: "960px",
+          margin: "0 auto",
+          padding: "var(--space-xxl) var(--space-xl)",
+        }}
+      >
+        {fmpWarning && (
+          <div
+            role="alert"
+            style={{
+              backgroundColor: "#3d2400",
+              border: "1px solid var(--warning)",
+              borderRadius: "6px",
+              padding: "var(--space-md) var(--space-lg)",
+              marginBottom: "var(--space-lg)",
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "var(--warning)",
+            }}
+          >
+            FMP API key not configured — enrichment disabled. Check your .env file.
+          </div>
+        )}
+        <LiveNowPanel />
+        <WatchlistPanel />
+        <RecentClosedPanel />
+      </main>
+    </div>
+  );
+}
