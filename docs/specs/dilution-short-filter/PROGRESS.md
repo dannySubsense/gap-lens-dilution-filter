@@ -3,9 +3,9 @@
 ## Status: IN_PROGRESS
 
 ## Slices
-- [ ] Slice 1: Project Scaffold — PENDING
-- [ ] Slice 2: DuckDB Foundation — PENDING
-- [ ] Slice 3: Config Extension — PENDING
+- [x] Slice 1: Project Scaffold — COMPLETE (2026-04-05, commit f599ca7, 29/29 tests)
+- [x] Slice 2: DuckDB Foundation — COMPLETE (2026-04-05, commit 3ccc347, 10/10 tests)
+- [x] Slice 3: Config Extension — COMPLETE (2026-04-05, commit 3ccc347, 17/17 tests)
 - [ ] Slice 4: Pydantic Models — PENDING
 - [ ] Slice 5: FMP Client — PENDING
 - [ ] Slice 6: Filing Fetcher + Ticker Resolver — PENDING
@@ -22,7 +22,7 @@
 - [ ] Slice 17: End-to-End Smoke Test — PENDING
 
 ## Current
-Slice: 1
+Slice: 4 + 5 + 6 (parallel)
 Step: @code-executor
 Last updated: 2026-04-05
 

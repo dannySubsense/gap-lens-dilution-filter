@@ -20,3 +20,15 @@ class ExternalAPIError(Exception):
     """Exception raised when there's an error with external API."""
 
     pass
+
+
+class FMPDataUnavailableError(Exception):
+    """Raised when FMP market data cannot be obtained after retries."""
+
+    pass
+
+
+class FilingFetchError(Exception):
+    """Raised when an EDGAR filing document cannot be fetched after retries."""
+
+    pass
