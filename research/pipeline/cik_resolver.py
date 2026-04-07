@@ -27,7 +27,7 @@ _NON_COMMON_TYPES = {"WARRANT", "RIGHT", "UNIT"}
 # Parameterised as (cik, filing_date, filing_date).
 # NOTE: active is in ORDER BY only — never in WHERE (anti-survivorship rule).
 _PRIMARY_SQL = """
-SELECT rsm.ticker, rsm.security_type, sh.permanent_id
+SELECT rsm.ticker, rsm.raw_json->>'type' AS security_type, sh.permanent_id
 FROM raw_symbols_massive rsm
 JOIN symbol_history sh ON sh.symbol = rsm.ticker
 WHERE rsm.cik = ?

@@ -6,8 +6,8 @@ market_data.duckdb is made. This is required because the real DB may hold an
 exclusive write lock during backfill operations.
 
 The schema mirrors the real market_data.duckdb tables:
-    - raw_symbols_massive: cik, ticker, security_type, active
-    - symbol_history:      symbol, start_date, end_date, permanent_id
+    - raw_symbols_massive: ticker, name, primary_exchange, cik, ..., active, raw_json
+    - symbol_history:      permanent_id, symbol, ..., start_date, end_date, security_type
     - raw_symbols_fmp:     symbol, name
 """
 
@@ -34,21 +34,33 @@ def mock_db(tmp_path: Path) -> Path:
     db_path = tmp_path / "test_market_data.duckdb"
     con = duckdb.connect(str(db_path))
 
-    # --- Schema ---
+    # --- Schema (mirrors real market_data.duckdb) ---
     con.execute("""
         CREATE TABLE raw_symbols_massive (
-            cik           VARCHAR,
-            ticker        VARCHAR,
-            security_type VARCHAR,
-            active        BOOLEAN
+            ticker           VARCHAR,
+            name             VARCHAR,
+            primary_exchange VARCHAR,
+            cik              VARCHAR,
+            composite_figi   VARCHAR,
+            share_class_figi VARCHAR,
+            active           BOOLEAN,
+            raw_json         JSON
         )
     """)
     con.execute("""
         CREATE TABLE symbol_history (
+            permanent_id VARCHAR,
             symbol       VARCHAR,
+            exchange     VARCHAR,
             start_date   DATE,
             end_date     DATE,
-            permanent_id VARCHAR
+            source       VARCHAR,
+            raw_json     JSON,
+            name         VARCHAR,
+            cik          VARCHAR,
+            sector       VARCHAR,
+            industry     VARCHAR,
+            security_type VARCHAR
         )
     """)
     con.execute("""
@@ -63,11 +75,11 @@ def mock_db(tmp_path: Path) -> Path:
     # CIK 0000111111 — single active ticker, currently active (no end_date).
     # Used by: test_single_active_ticker_resolves
     con.execute("""
-        INSERT INTO raw_symbols_massive VALUES
-            ('0000111111', 'ACME', 'Common Stock', TRUE)
+        INSERT INTO raw_symbols_massive (ticker, cik, active, raw_json) VALUES
+            ('ACME', '0000111111', TRUE, '{"type":"CS"}')
     """)
     con.execute("""
-        INSERT INTO symbol_history VALUES
+        INSERT INTO symbol_history (symbol, start_date, end_date, permanent_id) VALUES
             ('ACME', '2015-01-01', NULL, 'perm-ACME-001')
     """)
 
@@ -78,11 +90,11 @@ def mock_db(tmp_path: Path) -> Path:
     # Filing date within the active window → must still resolve.
     # Used by: test_delisted_symbol_resolves_within_active_window
     con.execute("""
-        INSERT INTO raw_symbols_massive VALUES
-            ('0000333333', 'DELT', 'Common Stock', FALSE)
+        INSERT INTO raw_symbols_massive (ticker, cik, active, raw_json) VALUES
+            ('DELT', '0000333333', FALSE, '{"type":"CS"}')
     """)
     con.execute("""
-        INSERT INTO symbol_history VALUES
+        INSERT INTO symbol_history (symbol, start_date, end_date, permanent_id) VALUES
             ('DELT', '2010-01-01', '2020-12-31', 'perm-DELT-001')
     """)
 
@@ -90,12 +102,12 @@ def mock_db(tmp_path: Path) -> Path:
     # Resolver must prefer the common share and suppress the warrant.
     # Used by: test_common_share_preferred_over_warrant
     con.execute("""
-        INSERT INTO raw_symbols_massive VALUES
-            ('0000444444', 'MIXS',  'Common Stock', TRUE),
-            ('0000444444', 'MIXSW', 'Warrant',      TRUE)
+        INSERT INTO raw_symbols_massive (ticker, cik, active, raw_json) VALUES
+            ('MIXS',  '0000444444', TRUE, '{"type":"CS"}'),
+            ('MIXSW', '0000444444', TRUE, '{"type":"WARRANT"}')
     """)
     con.execute("""
-        INSERT INTO symbol_history VALUES
+        INSERT INTO symbol_history (symbol, start_date, end_date, permanent_id) VALUES
             ('MIXS',  '2019-01-01', NULL, 'perm-MIXS-001'),
             ('MIXSW', '2019-01-01', NULL, 'perm-MIXSW-001')
     """)
@@ -104,11 +116,11 @@ def mock_db(tmp_path: Path) -> Path:
     # A filing dated 2023 must NOT resolve (date-range filter).
     # Used by: test_expired_symbol_does_not_resolve_for_later_filing
     con.execute("""
-        INSERT INTO raw_symbols_massive VALUES
-            ('0000555555', 'OLD1', 'Common Stock', FALSE)
+        INSERT INTO raw_symbols_massive (ticker, cik, active, raw_json) VALUES
+            ('OLD1', '0000555555', FALSE, '{"type":"CS"}')
     """)
     con.execute("""
-        INSERT INTO symbol_history VALUES
+        INSERT INTO symbol_history (symbol, start_date, end_date, permanent_id) VALUES
             ('OLD1', '2018-01-01', '2020-12-31', 'perm-OLD1-001')
     """)
 
@@ -305,5 +317,5 @@ def test_resolver_does_not_write(mock_db: Path) -> None:
     with CIKResolver(mock_db) as resolver:
         with pytest.raises(Exception):
             resolver._con.execute(
-                "INSERT INTO raw_symbols_massive VALUES ('X', 'Y', 'Z', TRUE)"
+                "INSERT INTO raw_symbols_massive (ticker, cik, active) VALUES ('X', 'Y', TRUE)"
             )
