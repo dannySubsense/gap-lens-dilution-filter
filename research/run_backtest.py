@@ -36,6 +36,9 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import duckdb
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # Pipeline imports
 from research.pipeline.bt_classifier import BacktestClassifier
@@ -53,7 +56,7 @@ from research.pipeline.discovery import FilingDiscovery
 from research.pipeline.fetcher import FilingTextFetcher
 from research.pipeline.market_data_joiner import MarketDataJoiner
 from research.pipeline.outcome_computer import OutcomeComputer
-from research.pipeline.output_writer import OutputWriter
+from research.pipeline.output_writer import OutputWriter, RESULTS_SCHEMA, PARTICIPANTS_SCHEMA
 from research.pipeline.run_manifest import RunManifest
 from research.pipeline.trading_calendar import TradingCalendar
 from research.pipeline.underwriter_extractor import UnderwriterExtractor
@@ -491,6 +494,132 @@ def _make_unresolvable_row(
 
 
 # ---------------------------------------------------------------------------
+# Shard I/O — write per-quarter results to disk, merge at the end
+# ---------------------------------------------------------------------------
+
+_SHARD_DIR_NAME = "shards"
+
+
+def _shard_dir(cfg: BacktestConfig) -> Path:
+    d = cfg.cache_dir / _SHARD_DIR_NAME
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _rows_to_table(rows: list[BacktestRow]) -> pa.Table:
+    """Convert BacktestRow objects to a pyarrow Table using the canonical schema."""
+    from dataclasses import fields as dc_fields
+    columns = [f.name for f in dc_fields(BacktestRow)]
+    data = {col: [getattr(r, col) for r in rows] for col in columns}
+    df = pd.DataFrame(data)
+    # UTC-localize datetime columns for pyarrow
+    for col in ("filed_at", "processed_at"):
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], utc=True)
+    return pa.Table.from_pandas(df, schema=RESULTS_SCHEMA, preserve_index=False)
+
+
+def _participants_to_table(participants: list[ParticipantRecord]) -> pa.Table:
+    """Convert ParticipantRecord objects to a pyarrow Table."""
+    from dataclasses import fields as dc_fields
+    columns = [f.name for f in dc_fields(ParticipantRecord)]
+    data = {col: [getattr(r, col) for r in participants] for col in columns}
+    df = pd.DataFrame(data)
+    return pa.Table.from_pandas(df, schema=PARTICIPANTS_SCHEMA, preserve_index=False)
+
+
+def _write_shard(
+    cfg: BacktestConfig,
+    shard_name: str,
+    rows: list[BacktestRow],
+    participants: list[ParticipantRecord],
+) -> None:
+    """Write a quarter's results and participants to Parquet shard files."""
+    sdir = _shard_dir(cfg)
+    if rows:
+        table = _rows_to_table(rows)
+        pq.write_table(table, str(sdir / f"{shard_name}_results.parquet"), compression="snappy")
+    if participants:
+        table = _participants_to_table(participants)
+        pq.write_table(table, str(sdir / f"{shard_name}_participants.parquet"), compression="snappy")
+    logger.debug("Shard written: %s (%d rows, %d participants)", shard_name, len(rows), len(participants))
+
+
+def _merge_shards_and_write(
+    cfg: BacktestConfig,
+    manifest: RunManifest,
+    output_dir: str | None,
+) -> None:
+    """Read all shard Parquet files, merge, sort, and write final output."""
+    import hashlib
+
+    sdir = _shard_dir(cfg)
+    out = Path(output_dir) if output_dir else Path("docs/research/data")
+    out.mkdir(parents=True, exist_ok=True)
+
+    # Merge results shards
+    result_shards = sorted(sdir.glob("*_results.parquet"))
+    if result_shards:
+        tables = [pq.read_table(str(p)) for p in result_shards]
+        merged = pa.concat_tables(tables)
+    else:
+        merged = pa.table({name: pa.array([], type=field.type) for name, field in zip(RESULTS_SCHEMA.names, RESULTS_SCHEMA)})
+
+    # Sort by (cik, filed_at, accession_number)
+    merged_df = merged.to_pandas()
+    merged_df.sort_values(["cik", "filed_at", "accession_number"], inplace=True)
+    merged_table = pa.Table.from_pandas(merged_df, schema=RESULTS_SCHEMA, preserve_index=False)
+
+    # Write results Parquet
+    results_path = out / "backtest_results.parquet"
+    pq.write_table(merged_table, str(results_path), compression="snappy", row_group_size=128 * 1024 * 1024)
+    logger.info("Wrote %s (%d rows)", results_path, len(merged_df))
+
+    # SHA-256
+    parquet_bytes = results_path.read_bytes()
+    manifest.parquet_sha256 = hashlib.sha256(parquet_bytes).hexdigest()
+    manifest.parquet_row_count = len(merged_df)
+
+    # Write results CSV
+    csv_path = out / "backtest_results.csv"
+    merged_df.to_csv(str(csv_path), index=False, encoding="utf-8", lineterminator="\n")
+    logger.info("Wrote %s", csv_path)
+
+    # Merge participants shards
+    participant_shards = sorted(sdir.glob("*_participants.parquet"))
+    if participant_shards:
+        p_tables = [pq.read_table(str(p)) for p in participant_shards]
+        p_merged = pa.concat_tables(p_tables)
+    else:
+        p_merged = pa.table({name: pa.array([], type=field.type) for name, field in zip(PARTICIPANTS_SCHEMA.names, PARTICIPANTS_SCHEMA)})
+
+    p_df = p_merged.to_pandas()
+    p_df.sort_values(["accession_number", "firm_name", "role"], inplace=True)
+    p_table = pa.Table.from_pandas(p_df, schema=PARTICIPANTS_SCHEMA, preserve_index=False)
+
+    # Write participants Parquet + CSV
+    p_parquet_path = out / "backtest_participants.parquet"
+    pq.write_table(p_table, str(p_parquet_path), compression="snappy")
+    logger.info("Wrote %s (%d rows)", p_parquet_path, len(p_df))
+
+    p_csv_path = out / "backtest_participants.csv"
+    p_df.to_csv(str(p_csv_path), index=False, encoding="utf-8", lineterminator="\n")
+    logger.info("Wrote %s", p_csv_path)
+
+    # Write manifest JSON
+    manifest_path = out / "backtest_run_metadata.json"
+    manifest_path.write_text(json.dumps(manifest.to_dict(), indent=2) + "\n", encoding="utf-8")
+    logger.info("Wrote %s", manifest_path)
+
+
+def _clear_shards(cfg: BacktestConfig) -> None:
+    """Remove all shard files from prior runs."""
+    sdir = _shard_dir(cfg)
+    for f in sdir.glob("*.parquet"):
+        f.unlink()
+
+
+# ---------------------------------------------------------------------------
 # Checkpoint I/O
 # ---------------------------------------------------------------------------
 
@@ -759,9 +888,12 @@ async def _pass2_and_output(
     scorer = BacktestScorer()
     computer = OutcomeComputer()
 
-    # Start with UNRESOLVABLE rows from Pass 1
-    all_rows: list[BacktestRow] = list(unresolvable_rows)
-    all_participants: list[ParticipantRecord] = []
+    # Clear prior shard files and write UNRESOLVABLE shard
+    _clear_shards(cfg)
+    if unresolvable_rows:
+        _write_shard(cfg, "00_unresolvable", unresolvable_rows, [])
+        logger.info("Flushed %d UNRESOLVABLE rows to shard.", len(unresolvable_rows))
+    del unresolvable_rows  # free ~3GB
 
     # Global dry-run counter (mutable single-element list for cross-quarter sharing)
     dry_run_remaining: list[int | None] = [args.dry_run]
@@ -808,26 +940,23 @@ async def _pass2_and_output(
             except Exception as exc:
                 logger.error("Quarter %s failed: %s", quarter_key, exc)
                 manifest.quarters_failed.append(quarter_key)
-                # Do NOT write a checkpoint for failed quarters
                 continue
 
-            all_rows.extend(rows)
-            all_participants.extend(participants)
+            # Flush quarter results to disk shard, then free memory
+            _write_shard(cfg, quarter_key, rows, participants)
             manifest.total_fetch_ok += stats.filings_fetched_ok
 
             _write_checkpoint(cfg, quarter_key, stats)
             _log_quarter_complete(quarter_key, stats)
 
+            del rows, participants  # free memory
+
     finally:
         await fetcher.close_session()
 
-    # Pass 3: Write output
-    logger.info(
-        "All quarters complete. Writing output: %d rows, %d participants.",
-        len(all_rows),
-        len(all_participants),
-    )
-    OutputWriter(output_dir=args.output_dir).write(all_rows, all_participants, manifest)
+    # Pass 3: Merge shards and write final output
+    logger.info("All quarters complete. Merging shards and writing output.")
+    _merge_shards_and_write(cfg, manifest, args.output_dir)
 
     logger.info(
         "Run complete. %d rows written. SHA-256: %s",
