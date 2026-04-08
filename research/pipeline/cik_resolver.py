@@ -47,6 +47,28 @@ WHERE name = ?
 LIMIT 1
 """
 
+# SQL for bulk preload of the full CIK -> symbol_history mapping.
+# Returns one row per (cik, ticker, symbol_history row) combination.
+# Ordered so that active symbols come before delisted ones, and earlier
+# start_dates come first within each CIK.
+_PRELOAD_SQL = """
+SELECT rsm.cik, rsm.ticker, rsm.raw_json->>'type' AS security_type,
+       rsm.active, sh.permanent_id, sh.start_date, sh.end_date
+FROM raw_symbols_massive rsm
+JOIN symbol_history sh ON sh.symbol = rsm.ticker
+WHERE rsm.cik IS NOT NULL
+ORDER BY rsm.cik,
+         CASE WHEN rsm.active THEN 0 ELSE 1 END,
+         sh.start_date ASC
+"""
+
+# SQL to bulk-load entity-name -> ticker fallback mapping from raw_symbols_fmp.
+_PRELOAD_FALLBACK_SQL = """
+SELECT name, symbol
+FROM raw_symbols_fmp
+WHERE name IS NOT NULL
+"""
+
 
 class CIKResolver:
     """
@@ -54,12 +76,22 @@ class CIKResolver:
 
     Connects to market_data.duckdb in read-only mode. The connection is opened
     at construction time and reused for all resolve() calls.
+
+    For bulk processing, call preload() once before the resolve() loop to load
+    the full CIK->ticker mapping into memory. resolve() will use the in-memory
+    cache when available, falling back to per-query SQL when preload() hasn't
+    been called (backward compatibility with tests).
     """
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         # Open once; read_only=True enforces the no-write invariant.
         self._con = duckdb.connect(str(db_path), read_only=True)
+        # In-memory cache populated by preload().
+        # Maps cik -> list of (ticker, security_type, permanent_id, active, start_date, end_date)
+        self._cik_cache: dict[str, list[tuple]] | None = None
+        # Maps entity_name.strip() -> ticker for fallback lookups.
+        self._name_cache: dict[str, str] | None = None
 
     def close(self) -> None:
         """Release the DuckDB connection."""
@@ -70,6 +102,54 @@ class CIKResolver:
 
     def __exit__(self, *_) -> None:
         self.close()
+
+    # ------------------------------------------------------------------
+    # Preload (bulk optimization)
+    # ------------------------------------------------------------------
+
+    def preload(self) -> None:
+        """
+        Bulk-load the full CIK->ticker mapping into memory using 2 SQL queries.
+
+        After preload() is called, resolve() uses dict lookups instead of
+        per-filing SQL queries. This reduces CIK resolution time from O(N) DB
+        round-trips to O(N) pure-Python dict lookups.
+
+        Stores:
+          _cik_cache: {cik: [(ticker, security_type, permanent_id, active,
+                               start_date, end_date), ...]}
+          _name_cache: {entity_name.strip(): ticker}
+        """
+        # --- Query 1: bulk CIK -> symbol_history rows ---
+        rows = self._con.execute(_PRELOAD_SQL).fetchall()
+
+        cik_cache: dict[str, list[tuple]] = {}
+        for cik, ticker, security_type, active, permanent_id, start_date, end_date in rows:
+            if cik not in cik_cache:
+                cik_cache[cik] = []
+            cik_cache[cik].append(
+                (ticker, security_type, permanent_id, active, start_date, end_date)
+            )
+
+        # --- Query 2: bulk entity-name fallback mapping ---
+        fmp_rows = self._con.execute(_PRELOAD_FALLBACK_SQL).fetchall()
+        name_cache: dict[str, str] = {}
+        for name, symbol in fmp_rows:
+            if name is not None:
+                key = name.strip()
+                if key and key not in name_cache:
+                    name_cache[key] = symbol
+
+        self._cik_cache = cik_cache
+        self._name_cache = name_cache
+
+        total_rows = len(rows)
+        total_ciks = len(cik_cache)
+        logger.info(
+            "CIKResolver: loaded %d CIKs (%d symbol-history rows).",
+            total_ciks,
+            total_rows,
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -117,8 +197,16 @@ class CIKResolver:
         """
         Core resolution logic.
 
+        When preload() has been called, uses in-memory cache with pure-Python
+        date-range filtering and disambiguation. Falls back to per-query SQL
+        when the cache is not available (backward compatibility with tests).
+
         Returns (ticker, permanent_id, resolution_status).
         """
+        if self._cik_cache is not None:
+            return self._resolve_cik_from_cache(cik, entity_name, filing_date)
+
+        # --- Per-query path (no preload; backward-compatible) ---
         rows = self._primary_lookup(cik, filing_date)
 
         if rows:
@@ -126,6 +214,53 @@ class CIKResolver:
 
         # No rows from primary lookup — attempt entity-name fallback.
         fallback_ticker = self._fallback_lookup(entity_name)
+        if fallback_ticker:
+            logger.debug(
+                "CIK %s resolved via fallback entity-name match: %s",
+                cik,
+                fallback_ticker,
+            )
+            return fallback_ticker, None, "RESOLVED"
+
+        logger.debug("CIK %s is UNRESOLVABLE", cik)
+        return None, None, "UNRESOLVABLE"
+
+    def _resolve_cik_from_cache(
+        self,
+        cik: str,
+        entity_name: str,
+        filing_date: date,
+    ) -> tuple[str | None, str | None, str]:
+        """
+        Resolve using the in-memory caches populated by preload().
+
+        Applies the same date-range filter and share-class disambiguation
+        as the SQL path, in pure Python.
+        """
+        all_entries = self._cik_cache.get(cik)  # type: ignore[union-attr]
+
+        if all_entries:
+            # Apply date-range filter (mirrors the WHERE clause of _PRIMARY_SQL).
+            # Each entry: (ticker, security_type, permanent_id, active, start_date, end_date)
+            filtered = [
+                entry for entry in all_entries
+                if entry[4] <= filing_date  # start_date <= filing_date
+                and (entry[5] is None or entry[5] >= filing_date)  # end_date >= filing_date or NULL
+            ]
+
+            if filtered:
+                # Convert to (ticker, security_type, permanent_id) tuples
+                # for the existing _disambiguate() method.
+                rows_for_disambiguate = [
+                    (entry[0], entry[1], entry[2]) for entry in filtered
+                ]
+                return self._disambiguate(rows_for_disambiguate, cik)
+
+        # No cache match — attempt entity-name fallback.
+        fallback_ticker = None
+        if entity_name and entity_name.strip() and self._name_cache is not None:
+            fallback_ticker = self._name_cache.get(entity_name.strip())
+
         if fallback_ticker:
             logger.debug(
                 "CIK %s resolved via fallback entity-name match: %s",

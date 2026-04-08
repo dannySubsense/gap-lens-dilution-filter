@@ -96,8 +96,13 @@ class FilingTextFetcher:
     def __init__(self, config: BacktestConfig) -> None:
         self.config = config
         self.cache_dir = config.cache_dir / "filing_text"
-        self._semaphore = asyncio.Semaphore(config.fetch_concurrency)
+        # Semaphore is created lazily inside the async context to avoid the
+        # "attached to a different event loop" problem when the fetcher is
+        # instantiated before asyncio.run() is called.
+        self._semaphore: asyncio.Semaphore | None = None
         self._rate_limiter: TokenBucketRateLimiter | None = None
+        # Shared session for connection pooling — created lazily by _get_session().
+        self._session: aiohttp.ClientSession | None = None
 
     async def _get_rate_limiter(self) -> TokenBucketRateLimiter:
         if self._rate_limiter is None:
@@ -106,6 +111,41 @@ class FilingTextFetcher:
                 capacity=self.config.fetch_rate_limit_per_sec,
             )
         return self._rate_limiter
+
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        """Return the per-fetcher semaphore, creating it lazily inside the running loop."""
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self.config.fetch_concurrency)
+        return self._semaphore
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """
+        Return the shared aiohttp session, creating it lazily on first call.
+
+        Uses a TCPConnector with connection limit matching fetch_concurrency and
+        a 300-second DNS cache TTL to reduce repeated DNS lookups for SEC EDGAR.
+        Headers and timeout are set on the session rather than per-request.
+        """
+        if self._session is None or self._session.closed:
+            connector = aiohttp.TCPConnector(
+                limit=self.config.fetch_concurrency,
+                ttl_dns_cache=300,
+            )
+            self._session = aiohttp.ClientSession(
+                headers={
+                    "User-Agent": self.USER_AGENT,
+                    "Accept": "text/html, text/plain",
+                },
+                timeout=aiohttp.ClientTimeout(total=self.config.fetch_timeout_sec),
+                connector=connector,
+            )
+        return self._session
+
+    async def close_session(self) -> None:
+        """Close the shared aiohttp session. Call once after all fetches complete."""
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     def _cache_path(self, accession_number: str) -> Path:
         return self.cache_dir / f"{accession_number}.txt"
@@ -185,15 +225,12 @@ class FilingTextFetcher:
 
         # Step 3: HTTP fetch with rate limiting and concurrency control.
         url = self.BASE_URL + filing.filename
-        headers = {
-            "User-Agent": self.USER_AGENT,
-            "Accept": "text/html, text/plain",
-        }
-        timeout = aiohttp.ClientTimeout(total=self.config.fetch_timeout_sec)
 
         rate_limiter = await self._get_rate_limiter()
+        session = await self._get_session()
+        semaphore = self._get_semaphore()
 
-        async with self._semaphore:
+        async with semaphore:
             response_bytes: bytes | None = None
             response_content_type: str = ""
             last_status: int = 0
@@ -201,8 +238,7 @@ class FilingTextFetcher:
             for attempt in range(self.MAX_RETRIES):
                 await rate_limiter.acquire()
                 try:
-                    async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
-                        async with session.get(url) as resp:
+                    async with session.get(url) as resp:
                             last_status = resp.status
                             response_content_type = resp.headers.get("Content-Type", "")
 

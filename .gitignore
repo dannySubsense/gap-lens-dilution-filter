@@ -13,3 +13,6 @@ dist/
 .pytest_cache/
 htmlcov/
 data/backups/
+research/cache/filing_text/
+research/cache/master_gz/
+research/cache/checkpoints/

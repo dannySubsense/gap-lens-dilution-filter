@@ -11,3 +11,4 @@ mypy
 duckdb
 lxml
 aiofiles
+psutil
