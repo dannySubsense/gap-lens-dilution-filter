@@ -612,6 +612,20 @@ def _merge_shards_and_write(
     logger.info("Wrote %s", manifest_path)
 
 
+def _has_shard(cfg: BacktestConfig, shard_name: str) -> bool:
+    """Return True if a results shard exists for this quarter."""
+    return (_shard_dir(cfg) / f"{shard_name}_results.parquet").exists()
+
+
+def _clear_shard(cfg: BacktestConfig, shard_name: str) -> None:
+    """Remove shard files for a specific quarter."""
+    sdir = _shard_dir(cfg)
+    for suffix in ("_results.parquet", "_participants.parquet"):
+        p = sdir / f"{shard_name}{suffix}"
+        if p.exists():
+            p.unlink()
+
+
 def _clear_shards(cfg: BacktestConfig) -> None:
     """Remove all shard files from prior runs."""
     sdir = _shard_dir(cfg)
@@ -888,12 +902,12 @@ async def _pass2_and_output(
     scorer = BacktestScorer()
     computer = OutcomeComputer()
 
-    # Clear prior shard files and write UNRESOLVABLE shard
-    _clear_shards(cfg)
+    # Write UNRESOLVABLE shard (always — these depend on the current discovery run)
+    _clear_shard(cfg, "00_unresolvable")
     if unresolvable_rows:
         _write_shard(cfg, "00_unresolvable", unresolvable_rows, [])
         logger.info("Flushed %d UNRESOLVABLE rows to shard.", len(unresolvable_rows))
-    del unresolvable_rows  # free ~3GB
+    del unresolvable_rows  # free memory
 
     # Global dry-run counter (mutable single-element list for cross-quarter sharing)
     dry_run_remaining: list[int | None] = [args.dry_run]
@@ -904,9 +918,9 @@ async def _pass2_and_output(
             if args.quarter is not None and quarter_key != args.quarter:
                 continue
 
-            # Apply --resume: skip COMPLETE quarters
-            if args.resume and _is_quarter_complete(cfg, quarter_key):
-                logger.info("[Q %s] SKIPPED (checkpoint status=COMPLETE)", quarter_key)
+            # Apply --resume: skip quarters with COMPLETE checkpoint AND existing shard
+            if args.resume and _is_quarter_complete(cfg, quarter_key) and _has_shard(cfg, quarter_key):
+                logger.info("[Q %s] SKIPPED (checkpoint=COMPLETE, shard exists)", quarter_key)
                 continue
 
             # Check global dry-run limit before starting this quarter
