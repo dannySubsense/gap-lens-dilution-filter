@@ -951,6 +951,10 @@ async def _pass2_and_output(
 
             del rows, participants  # free memory
 
+            # Reset fetcher session between quarters to prevent memory leak
+            # from aiohttp's internal connection pool and response buffers
+            await fetcher.close_session()
+
     finally:
         await fetcher.close_session()
 
