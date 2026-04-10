@@ -14,7 +14,7 @@ from pathlib import Path
 # Module-level constants
 # ---------------------------------------------------------------------------
 
-FLOAT_DATA_START_DATE = date(2020, 3, 4)
+FLOAT_DATA_START_DATE = date(2021, 6, 1)  # FMP float coverage reliable for small caps from this date
 MARKET_DATA_DB_PATH = Path("/home/d-tuned/market_data/duckdb/market_data.duckdb")
 PIPELINE_VERSION = "backtest-v1.0.0"
 CLASSIFIER_VERSION = "rule-based-v1"
