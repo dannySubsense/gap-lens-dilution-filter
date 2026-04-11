@@ -888,19 +888,16 @@ async def _pass2_and_output(
     Pass 2 + Pass 3: Process all quarters in a single asyncio event loop,
     then write output.
     """
-    # Initialize async components
+    # Initialize components (joiner created per-quarter to prevent DuckDB memory leak)
     fetcher = FilingTextFetcher(config=cfg)
     classifier = BacktestClassifier()
     extractor = UnderwriterExtractor(
         normalization_config_path=cfg.normalization_config_path
     )
-    joiner = MarketDataJoiner(
-        db_path=Path(args.db_path_resolved),
-        calendar=calendar,
-    )
     filter_engine = BacktestFilterEngine(config=cfg)
     scorer = BacktestScorer()
     computer = OutcomeComputer()
+    db_path = Path(args.db_path_resolved)
 
     # Write UNRESOLVABLE shard (always — these depend on the current discovery run)
     _clear_shard(cfg, "00_unresolvable")
@@ -935,6 +932,9 @@ async def _pass2_and_output(
                 len(resolved_filings),
             )
 
+            # Create joiner per-quarter and close after to prevent DuckDB
+            # query cache from accumulating across quarters (memory leak)
+            joiner = MarketDataJoiner(db_path=db_path, calendar=calendar)
             try:
                 rows, participants, stats = await _process_quarter(
                     quarter_key,
@@ -955,6 +955,8 @@ async def _pass2_and_output(
                 logger.error("Quarter %s failed: %s", quarter_key, exc)
                 manifest.quarters_failed.append(quarter_key)
                 continue
+            finally:
+                joiner.close()
 
             # Flush quarter results to disk shard, then free memory
             _write_shard(cfg, quarter_key, rows, participants)
@@ -965,8 +967,7 @@ async def _pass2_and_output(
 
             del rows, participants  # free memory
 
-            # Reset fetcher session between quarters to prevent memory leak
-            # from aiohttp's internal connection pool and response buffers
+            # Reset fetcher session between quarters to prevent aiohttp leak
             await fetcher.close_session()
 
     finally:
